@@ -1,0 +1,84 @@
+name: egde_ai_demo
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:6.0
+    container_name: egde_ai_mongodb
+    ports:
+      - "27020:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=emr
+      - MONGO_INITDB_ROOT_PASSWORD=123456
+    volumes:
+      - mongo_data:/data/db
+    networks:
+      - classroom_network
+    healthcheck:
+      test: ["CMD", "mongosh", "--username", "emr", "--password", "123456", "--authenticationDatabase", "admin", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: egde_ai_backend
+    ports:
+      - "8000:8000"
+    environment:
+      - MONGODB_URL=${MONGODB_URL:-mongodb://emr:123456@mongodb:27017/?authSource=admin}
+      - DATABASE_NAME=smart_classroom
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - AI_SERVICE_URL=http://ai-service:8001
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    networks:
+      - classroom_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  ai-service:
+    build:
+      context: ./ai-service
+      dockerfile: Dockerfile
+    container_name: egde_ai_service
+    ports:
+      - "8001:8001"
+    environment:
+      - BACKEND_URL=http://backend:8000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - classroom_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8001/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: egde_ai_frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - classroom_network
+
+volumes:
+  mongo_data:
+
+networks:
+  classroom_network:
+    driver: bridge
